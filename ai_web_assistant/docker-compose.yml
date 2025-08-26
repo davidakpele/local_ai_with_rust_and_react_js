@@ -1,0 +1,88 @@
+services:
+  app1:
+    build: .
+    container_name: ai_web_assistant_1
+    ports:
+      - "8055:8055"
+    environment:
+      DATABASE_URL: postgres://postgres:powergrid%402%3F.net@postgres_db:5432/ai_web_assistant?schema=public
+      DB_MAX_CONNECTIONS: 10
+    depends_on:
+      - postgres_db
+      - redis
+    networks:
+      - ai_web_assistant_network  
+
+  app2:
+    build: .
+    container_name: ai_web_assistant_2
+    ports:
+      - "8056:8055"
+    environment:
+      DATABASE_URL: postgres://postgres:powergrid%402%3F.net@postgres_db:5432/ai_web_assistant?schema=public
+      DB_MAX_CONNECTIONS: 10
+    depends_on:
+      - postgres_db
+      - redis
+    networks:
+      - ai_web_assistant_network  
+
+  app3:
+    build: .
+    container_name: ai_web_assistant_3
+    ports:
+      - "8057:8055"
+    environment:
+      DATABASE_URL: postgres://postgres:powergrid%402%3F.net@postgres_db:5432/ai_web_assistant?schema=public
+      DB_MAX_CONNECTIONS: 10
+    depends_on:
+      - postgres_db
+      - redis
+    networks:
+      - ai_web_assistant_network  
+
+  postgres_db:
+    image: postgres:latest
+    container_name: ai_web_assistant_db
+    restart: always
+    environment:
+      POSTGRES_DB: ai_web_assistant
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: powergrid@2?.net
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - ai_web_assistant_network
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6380:6379"
+    restart: always
+    networks:
+      - ai_web_assistant_network
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "8081:80"
+    depends_on:
+      - app1
+      - app2
+      - app3
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - ai_web_assistant_network  
+
+volumes:
+  pg_data:
+
+networks:
+  ai_web_assistant_network:   
+    name: ai_web_assistant_network
+    driver: bridge

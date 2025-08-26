@@ -1,0 +1,4 @@
+@import "tailwindcss";
+.auth-btn{
+    cursor: pointer;
+}
