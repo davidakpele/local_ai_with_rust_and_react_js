@@ -1,613 +1,825 @@
-import React, { useState, useEffect, useRef } from 'react';
-import Prism from 'prismjs';
-import 'prismjs/themes/prism-tomorrow.css';
+import React, { useState, useRef, useEffect } from 'react';
+import "./Chatbot.css"
 import AppManager from '../utils/appManager';
+import appManager from '../utils/appManager';
+import markdownStyles from "./MarkdownStyle";
+import { FormatMessageAdvanced } from '../utils/FormatMessageAdvanced';
 
-// Add styles only once - moved outside component
-const markdownStyles = `
-    /* Base styling */
-    .ai-response {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      color: #1f2937;
-      line-height: 1.7;
-    }
-
-    /* Headings */
-    .ai-response h1, .ai-response h2, .ai-response h3 {
-      font-weight: 600;
-      margin-top: 1rem;
-      margin-bottom: 0.5rem;
-      line-height: 1.3;
-    }
-
-    .ai-response h1 { 
-      font-size: 1.5rem; 
-      border-bottom: 2px solid #e5e7eb; 
-      padding-bottom: .3rem; 
-    }
-    
-    .ai-response h2 { 
-      font-size: 1.25rem; 
-      border-bottom: 1px solid #e5e7eb; 
-      padding-bottom: .2rem; 
-    }
-    
-    .ai-response h3 { 
-      font-size: 1.1rem; 
-    }
-
-    /* Paragraphs */
-    .ai-response p { 
-      margin: 0.5rem 0; 
-    }
-
-    /* Lists */
-    .ai-response ul, .ai-response ol { 
-      margin: 0.5rem 0; 
-      padding-left: 1.5rem; 
-    }
-    
-    .ai-response li { 
-      margin: .25rem 0; 
-    }
-
-    /* Blockquotes */
-    .ai-response blockquote {
-      border-left: 4px solid #3b82f6;
-      padding-left: 1rem;
-      margin: 0.5rem 0;
-      color: #374151;
-      border-radius: 6px;
-      font-style: italic;
-    }
-
-    /* Inline code */
-    .ai-response code:not(.inline-code) {
-      color: #fff;
-      background: #1e293b !important;
-      padding: 0.2rem 0.4rem;
-      border-radius: 4px;
-      font-family: "Fira Code", monospace;
-    }
-
-    /* Code blocks */
-    .ai-response pre {
-      position: relative;
-      background: #1e293b;
-      color: #f8fafc;
-      padding: 2px !important;
-      margin: 4px 0 !important;
-      border-radius: 8px;
-      overflow-x: auto;
-    }
-    .ai-response pre code {
-      color: inherit;
-      background: none;
-      padding: 0;
-      display: block;
-      white-space: pre;
-      font-family: "Fira Code", monospace;
-    }
-
-    /* Copy button */
-    .ai-response .copy-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      background: #374151;
-      color: white;
-      border: none;
-      padding: 4px 8px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.9rem;
-      transition: background 0.2s ease;
-    }
-    .ai-response .copy-btn:hover {
-      background: #2563eb;
-    }
-
-    /* Inline code specifically */
-    .inline-code {
-      background: #f3f4f6;
-      color: #d63384;
-      padding: 0.2rem 0.4rem;
-      border-radius: 4px;
-      font-family: "Fira Code", monospace;
-    }
-`;
-
-// Add styles to document head once
-let stylesAdded = false;
-const addMarkdownStyles = () => {
-  if (stylesAdded) return;
-  
-  const styleElement = document.createElement('style');
-  styleElement.textContent = markdownStyles;
-  document.head.appendChild(styleElement);
-  stylesAdded = true;
-};
-
-// Helper function to escape HTML (important for code blocks)
-const escapeHtml = (text) => {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-};
-
-// Enhanced message formatting function with code support
-// Enhanced message formatting function with code support
-const formatMessageAdvanced = (text) => {
-  if (!text) return '';
-
-  let formattedText = text;
-  const codeBlocks = [];
-
-  // Handle code blocks (```code```)
-  formattedText = formattedText.replace(/```(\w+)?\s*([\s\S]*?)```/g, (match, language, code) => {
-      const langClass = language ? ` language-${language}` : '';
-      const escapedCode = escapeHtml(code.trim());
-      const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`;
-      
-      codeBlocks.push(
-          `<pre>
-              <button class="copy-btn" onclick="window.copyCode(this)">📋</button>
-              <code class="${langClass}">${escapedCode}</code>
-          </pre>`
-      );
-      return placeholder;
-  });
-
-  // Inline code
-  formattedText = formattedText.replace(/`([^`]+)`/g, '<code class="inline-code bg-gray-200 text-red-600 px-1 py-0.5 rounded text-sm font-mono">$1</code>');
-
-  // Numbered lists
-  formattedText = formattedText.replace(/(\n|^)(\d+)\.\s+([^\n]+)/g, '$1<li class="list-decimal ml-5">$3</li>');
-
-  // Bullet lists
-  formattedText = formattedText.replace(/(\n|^)([•\-*])\s+([^\n]+)/g, '$1<li class="list-disc ml-5">$3</li>');
-
-  // Wrap consecutive list items
-  formattedText = formattedText.replace(/(<li[^>]*>.*?<\/li>(\s*<li[^>]*>.*?<\/li>)+)/gs, (match) => {
-      if (match.match(/list-decimal/)) {
-          return `<ol class="list-decimal pl-5 space-y-1 my-2">${match}</ol>`;
-      } else {
-          return `<ul class="list-disc pl-5 space-y-1 my-2">${match}</ul>`;
-      }
-  });
-
-  // Bold
-  formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold">$1</strong>');
-
-  // Italic
-  formattedText = formattedText.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>');
-
-  // 🚫 REMOVE global <br/> replacement
-  // Instead, turn standalone newlines into paragraphs
-  formattedText = formattedText
-    .split(/\n{2,}/) // split on double newlines (paragraph breaks)
-    .map(block => {
-      block = block.trim();
-      if (!block) return '';
-      if (block.startsWith('<li')) return block; // don’t wrap list items
-      return `<p>${block}</p>`;
-    })
-    .join('');
-
-  // Restore code blocks
-  codeBlocks.forEach((block, index) => {
-      formattedText = formattedText.replace(`__CODE_BLOCK_${index}__`, block);
-  });
-
-  return formattedText;
-};
-
-
-// Copy function for code blocks - attach to window for global access
-if (typeof window !== 'undefined') {
-  window.copyCode = (button) => {
-      const code = button.nextElementSibling.innerText;
-      navigator.clipboard.writeText(code).then(() => {
-          button.innerHTML = "✅";
-          setTimeout(() => (button.innerHTML = "📋"), 1500);
-      });
-  };
-}
-
-// Format time function
-const formatTime = (timestamp) => {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
-// Updated ChatMessage component to match your structure
-const ChatMessage = ({ message, isUser, timestamp }) => {
-  useEffect(() => {
-    if (!isUser) {
-      Prism.highlightAll();
-    }
-  }, [message, isUser]);
-
-  return (
-    <div className={`flex items-start ${isUser ? "justify-end" : "justify-start"}`}>
-      {/* AI icon (left, swapped) */}
-      {!isUser && (
-        <div className="mr-2 mt-1">
-          <i className="fas fa-robot text-purple-400"></i>
-        </div>
-      )}
-
-      {/* Message bubble */}
-      <div className="flex flex-col max-w-[80%]">
-        <div
-          className={`px-4 py-2 rounded-2xl shadow text-sm whitespace-pre-wrap break-words relative 
-          ${isUser
-            ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white self-end"
-            : "bg-white text-gray-800"
-          }`}
-        >
-          {isUser ? (
-            message
-          ) : (
-            <div
-              className="ai-response"
-              dangerouslySetInnerHTML={{ __html: formatMessageAdvanced(message) }}
-            />
-          )}
-        </div>
-        <span
-          className={`text-[10px] text-gray-500 mt-1 ${isUser ? "text-right" : "text-left"}`}
-        >
-          {formatTime(timestamp)}
-        </span>
-      </div>
-
-      {/* User icon (right, swapped) */}
-      {isUser && (
-        <div className="ml-2 mt-1">
-          <i className="fas fa-user text-blue-300"></i>
-        </div>
-      )}
-    </div>
-  );
-};
-
-
-// Component for the typing indicator animation (updated to match your structure)
-const TypingIndicator = () => {
-  return (
-      <div className="flex items-center gap-2 px-4 py-2 bg-gray-200 rounded-2xl w-fit">
-          <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce"></span>
-          <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-          <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce [animation-delay:0.4s]"></span>
-      </div>
-  );
-};
-
-// Styled components for input area
-const InputContainer = ({ children }) => (
-  <div className="px-5 py-4 bg-white border-t border-gray-200">{children}</div>
-);
-
-const InputWrapper = ({ children }) => (
-  <div className="flex items-center gap-2">{children}</div>
-);
-
-const Input = ({ ...props }) => (
-  <textarea
-    className="flex-1 px-4 py-2 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
-    rows={1} // adjust how many lines show by default
-    {...props}
-  />
-);
-
-
-const SendButton = ({ disabled, ...props }) => (
-  <button
-      className={`p-2 rounded-full ${disabled ? 'bg-gray-300 text-gray-500' : 'bg-indigo-500 text-white hover:bg-indigo-600'}`}
-      disabled={disabled}
-      {...props}
-  >
-      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-      </svg>
-  </button>
-);
-
-const Chatbot = () => {
-  const [messages, setMessages] = useState([
-      { id: 1, text: 'Hello! How can I help you today?', sender: 'ai', timestamp: Date.now() },
-  ]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef(null);
-  const socketRef = useRef(null);
+export default function Chatbot() {
+  const [messages, setMessages] = useState([]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const currentStreamIndexRef = useRef(null);
+  const [input, setInput] = useState('');
+  const chatDisplayRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAiTyping, setAiTyping] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const socketRef = useRef(null);
+  const [history, setHistory] = useState([]);
   const streamingMessageRef = useRef('');
+  const shouldScrollRef = useRef(true); 
+ 
+  const [activeState, setActivateState] = useState({
+    title:'New Chat'
+  });
+  
+  // New states for dropdown and modals
+  const [activeDropdown, setActiveDropdown] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedHistory, setSelectedHistory] = useState(null);
+  const [editTitle, setEditTitle] = useState('');
+  const dropdownRef = useRef(null);
+
+  // States for message editing
+  const [showMessageDeleteModal, setShowMessageDeleteModal] = useState(false);
+  const [messageToDelete, setMessageToDelete] = useState(null);
 
   const { token, username } = AppManager.get({
       keys: ['token', 'username'],
       type: 'local'
   });
-
-  // Add styles on component mount
+  
+  // Close dropdown when clicking outside
   useEffect(() => {
-      addMarkdownStyles();
+     Prism.highlightAll();
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setActiveDropdown(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, []);
 
-  // Scroll to bottom
+  // Initial welcome message
+  useEffect(() => {
+    setMessages([]);
+  }, []);
+
+
+  // Scroll to bottom function with conditional logic
   const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (shouldScrollRef.current && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   };
+  
+  // Handle user scroll behavior
+  useEffect(() => {
+    const chatContainer = chatDisplayRef.current;
+    if (!chatContainer) return;
+
+    const handleScroll = () => {
+      // Check if user is near the bottom
+      const isNearBottom = 
+        chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight < 100;
+      
+      // if user is near the bottom
+      shouldScrollRef.current = isNearBottom;
+    };
+
+    chatContainer.addEventListener('scroll', handleScroll);
+    return () => chatContainer.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Update scroll effect
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const loadHistory =()=>{
+     const sidebarPayload = JSON.stringify({
+        type: 'fetch_sidebar_history',
+        user_id: 13,
+      });
+      socketRef.current.send(sidebarPayload);
+  }
+  
+  const loadNewSessionPage =()=>{
+    // Step 1: send start_connection
+      const startPayload = JSON.stringify({
+        token: token,
+        user_id:13,
+        type: 'start_new_session'
+      });
+      socketRef.current.send(startPayload);
+  }
+
+  const loadContent =(conversationId)=>{
+    const loadConversationPayload = JSON.stringify({
+      type: "fetch_conversation",
+      conversation_id: conversationId
+    });
+
+    socketRef.current.send(loadConversationPayload);
+    loadHistory();
+  }
+
+  const loadMessages=()=>{
+     const loadContentPayload = JSON.stringify({
+      type: "fetch_all_messages",
+    });
+
+    socketRef.current.send(loadContentPayload);
+    setActivateState(prev => ({
+      ...prev,
+      title: 'New Chat'
+    }));
+  }
 
   useEffect(() => {
-      scrollToBottom();
-  }, [messages, isLoading]);
+    if (!token) {
+      console.warn('Token missing. WebSocket not connected.');
+      return;
+    }
 
-  // Setup WebSocket on mount
-  useEffect(() => {
-      if (!token) {
-          console.warn('Token missing. WebSocket not connected.');
-          return;
-      }
+    const wsUrl = `ws://localhost:9001/ws/chat`;
 
-      const wsUrl = `ws://localhost:9001/ws/chat`;
+    socketRef.current = new WebSocket(wsUrl);
 
-      socketRef.current = new WebSocket(wsUrl);
+    socketRef.current.onopen = () => {
+      // Step 1: send start_connection
+      const startPayload = JSON.stringify({
+        token: token,
+        type: 'start_connection'
+      });
+      socketRef.current.send(startPayload);
 
-      socketRef.current.onopen = () => {
-          console.log('WebSocket connected');
-          const startPayload = JSON.stringify({
-              token: token,
-              type: 'start_connection'
-          });
-          socketRef.current.send(startPayload);
-      };
+      // Step 2: immediately fetch sidebar history
+      const sidebarPayload = JSON.stringify({
+        type: 'fetch_sidebar_history',
+        user_id: 13,
+      });
+      socketRef.current.send(sidebarPayload);
+    };
 
-      socketRef.current.onmessage = (event) => {
-          try {
-              const data = JSON.parse(event.data);
+    socketRef.current.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        switch (data.type) {
+          case 'session_created':
+            AppManager.saveUserSession({
+              session_id: data.session_id,
+              user_id: data.user_id,
+              current_session: data.session_id,
+              created_at: new Date().toISOString()
+            });
+            break;
           
-              switch(data.type) {
-                  case 'session_created':
-                      break;
+          case 'MessageCreated':
+            setAiTyping(false);
+            break;
 
-                  case 'stream_chunk':
-                    if (!data.chunk || data.chunk.trim() === "") {
-                        break;
-                    }
-                      // Add chunk to the streaming buffer
-                      streamingMessageRef.current += data.chunk;
-                      
-                      // Update or create the streaming message
-                      setMessages((prev) => {
-                          if (currentStreamIndexRef.current === null) {
-                              // Create new message for streaming
-                              currentStreamIndexRef.current = prev.length;
-                              return [...prev, {
-                                  id: Date.now(),
-                                  text: streamingMessageRef.current,
-                                  sender: 'ai',
-                                  timestamp: Date.now(),
-                                  isStreaming: true
-                              }];
-                          } else {
-                              // Update existing streaming message
-                              const newMessages = [...prev];
-                              if (currentStreamIndexRef.current < newMessages.length) {
-                                  newMessages[currentStreamIndexRef.current] = {
-                                      ...newMessages[currentStreamIndexRef.current],
-                                      text: streamingMessageRef.current
-                                  };
-                              } else {
-                                  // Fallback: if index is invalid, create new message
-                                  currentStreamIndexRef.current = newMessages.length;
-                                  newMessages.push({
-                                      id: Date.now(),
-                                      text: streamingMessageRef.current,
-                                      sender: 'ai',
-                                      timestamp: Date.now(),
-                                      isStreaming: true
-                                  });
-                              }
-                              return newMessages;
-                          }
-                      });
-                      break;
-
-                  case 'stream_end':
-                      // Finalize the streaming message
-                      setMessages((prev) => {
-                          const newMessages = [...prev];
-                          if (currentStreamIndexRef.current !== null &&
-                              currentStreamIndexRef.current < newMessages.length) {
-                              newMessages[currentStreamIndexRef.current] = {
-                                  ...newMessages[currentStreamIndexRef.current],
-                                  text: streamingMessageRef.current,
-                                  isStreaming: false
-                              };
-                          }
-                          return newMessages;
-                      });
-                      
-                      setIsLoading(false);
-                      streamingMessageRef.current = '';
-                      currentStreamIndexRef.current = null;
-                      break;
-
-                  case 'ai_response':
-                      // Handle complete AI response (non-streaming fallback)
-                      setMessages((prev) => [...prev, {
-                          id: Date.now(),
-                          text: data.response,
-                          sender: 'ai',
-                          timestamp: Date.now()
-                      }]);
-                      setIsLoading(false);
-                      streamingMessageRef.current = '';
-                      currentStreamIndexRef.current = null;
-                      break;
-
-                  case 'error':
-                      // Handle errors
-                      setMessages((prev) => [...prev, {
-                          id: Date.now(),
-                          text: `Error: ${data.error || 'Something went wrong.'}`,
-                          sender: 'ai',
-                          timestamp: Date.now()
-                      }]);
-                      setIsLoading(false);
-                      streamingMessageRef.current = '';
-                      currentStreamIndexRef.current = null;
-                      break;
-
-                  default:
-                      console.log('Unknown message type:', data);
+          case 'user_message':
+            saveConversationMessage({
+              user_id: data.user_id,
+              conversation_id: data.conversation_id,
+              conversation_title: data.conversation_title,
+              message: {
+                message_id: `msg_${crypto.randomUUID()}`,
+                role: "user",
+                content: data.prompt,
               }
-          } catch (error) {
-              console.error('Error parsing WebSocket message:', error, event.data);
-          }
-      };
+            });
+            break;
 
-      socketRef.current.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          setIsLoading(false);
-          streamingMessageRef.current = '';
-          currentStreamIndexRef.current = null;
-      };
+          case 'stream_chunk':
+            if (!data.chunk || data.chunk.trim() === "") break;
 
-      socketRef.current.onclose = () => {
-          console.log('WebSocket connection closed');
-          setIsLoading(false);
-          streamingMessageRef.current = '';
-          currentStreamIndexRef.current = null;
-      };
+            streamingMessageRef.current += data.chunk;
 
-      return () => {
-          socketRef.current?.close();
-      };
+            setMessages(prev => {
+              let newMessages = [...prev];
+
+              if (currentStreamIndexRef.current === null) {
+                // First chunk → push new message
+                currentStreamIndexRef.current = newMessages.length;
+                newMessages.push({
+                  id: Date.now(),
+                  text: streamingMessageRef.current,
+                  sender: 'ai',
+                  isStreaming: true
+                });
+              } else if (newMessages[currentStreamIndexRef.current]) {
+                // Subsequent chunks → append to existing message only if it exists
+                newMessages[currentStreamIndexRef.current] = {
+                  ...newMessages[currentStreamIndexRef.current],
+                  text: streamingMessageRef.current
+                };
+              } else {
+                // index missing → push as new message
+                currentStreamIndexRef.current = newMessages.length;
+                newMessages.push({
+                  id: Date.now(),
+                  text: streamingMessageRef.current,
+                  sender: 'ai',
+                  isStreaming: true
+                });
+              }
+
+              // Update Ollama data
+              AppManager.updateOllamaMessages(newMessages);
+
+              return newMessages;
+            });
+            break;
+
+          case 'stream_end':
+            if (data.status === "success") {
+              setIsLoading(false);
+              setAiTyping(false);
+              setMessages(prev => {
+                const newMessages = [...prev];
+                if (currentStreamIndexRef.current !== null &&
+                  currentStreamIndexRef.current < newMessages.length) {
+                  newMessages[currentStreamIndexRef.current] = {
+                    ...newMessages[currentStreamIndexRef.current],
+                    text: streamingMessageRef.current,
+                    isStreaming: false
+                  };
+
+                  // Save final AI message to ollama_data
+                  saveConversationMessage({
+                    user_id: data.user_id,
+                    conversation_id: data.conversation_id,
+                    conversation_title: data.conversation_title,
+                    message: {
+                      message_id: `msg_${crypto.randomUUID()}`,
+                      role: "ai",
+                      content: streamingMessageRef.current,
+                    }
+                  });
+                }
+
+                AppManager.updateOllamaMessages(newMessages);
+                return newMessages;
+              });
+
+              // Fetch sidebar after success
+              if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+                loadHistory()
+              }
+            }
+
+            setIsLoading(false);
+            streamingMessageRef.current = '';
+            currentStreamIndexRef.current = null;
+            break;
+
+          case 'sidebar_history':
+            if (data.status === "ok") {
+              AppManager.updateOllamaSidebarHistory(data);
+              setHistory(data.conversations)
+            }
+            break 
+          
+          case 'conversation_history':
+            if (data.status === "ok" && Array.isArray(data.messages)) {
+              const formattedMessages = data.messages.map(msg => ({
+                id: msg.message_id,
+                text: msg.content,
+                sender: msg.role === 'user' ? 'user' : 'ai',
+                isStreaming: false
+              }));
+              setMessages(formattedMessages);
+            }
+            break;
+          
+          case 'content_title_edited':
+            loadHistory();
+
+          case 'deleted':
+            loadMessages();
+            
+          case 'all_messages':
+            loadHistory();
+
+            setIsLoading(false);
+            streamingMessageRef.current = '';
+            currentStreamIndexRef.current = null;
+            break;
+
+          default:
+            console.log('Unknown message type:', data);
+        }
+           
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error, event.data);
+      }
+    };
+
+    socketRef.current.onerror = (error) => {
+      setIsLoading(false);
+      streamingMessageRef.current = '';
+      currentStreamIndexRef.current = null;
+    };
+
+    socketRef.current.onclose = () => {
+      console.log('WebSocket connection closed');
+      setIsLoading(false);
+      streamingMessageRef.current = '';
+      currentStreamIndexRef.current = null;
+    };
+
+    return () => {
+      socketRef.current?.close();
+    };
   }, [token]);
+
+  const handleLogout = () => {
+    window.location.href = "/logout";
+  }
 
   const handleSend = (e) => {
       e.preventDefault();
       if (input.trim() === '' || isLoading) return;
-
+      const currentSession = AppManager.getCurrentSession();
+      setIsLoading(true);
+      setAiTyping(true);
       const userMessage = {
           id: Date.now(),
           text: input,
           sender: 'user',
-          timestamp: Date.now()
       };
       setMessages((prev) => [...prev, userMessage]);
       setInput('');
-      setIsLoading(true);
+      const fallbackTimer = setTimeout(() => {
+        setIsLoading(false);
+        setAiTyping(false);
+      }, 30000);
+
       streamingMessageRef.current = '';
       currentStreamIndexRef.current = null;
+      shouldScrollRef.current = true; 
 
       const messagePayload = JSON.stringify({
           type: 'ai_request',
           prompt: input,
+          session_id: currentSession
       });
-
+      
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
           try {
               socketRef.current.send(messagePayload);
           } catch (error) {
-              console.error('Error sending message:', error);
+            clearTimeout(fallbackTimer);
+            setIsLoading(false);
+            setAiTyping(false)
               setMessages((prev) => [
                   ...prev,
                   {
                       id: Date.now(),
                       text: 'Failed to send message. Please try again.',
                       sender: 'ai',
-                      timestamp: Date.now()
                   }
               ]);
-              setIsLoading(false);
           }
       } else {
-          console.error('WebSocket is not connected');
+        clearTimeout(fallbackTimer);
+        setIsLoading(false);
+        setAiTyping(false)
           setMessages((prev) => [
               ...prev,
               {
                   id: Date.now(),
                   text: 'Unable to send message. Please try again later.',
                   sender: 'ai',
-                  timestamp: Date.now()
               }
           ]);
-          setIsLoading(false);
       }
   };
 
-  const handleLogout = () => {
-    window.location.href = "/logout";
-  }
-  
-  return (
-      <div className="flex flex-col h-[690px] w-full max-w-4xl mx-auto bg-gray-800 shadow-xl rounded-lg overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4  text-white">
-              {/* Left side */}
-              <div className="flex items-center gap-3" >
-                  <div className="w-10 h-10 flex items-center justify-center rounded-full bg-white/20 font-bold text-lg">
-                      AI
-                  </div>
-                  <div>
-                      <h3 className="font-semibold">AI Assistant</h3>
-                      <div className="flex items-center">
-                          <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
-                          <p className="text-xs opacity-90">Online • Ready to help</p>
-                      </div>
-                  </div>
-              </div>
+  // Function to handle the "New Chat" action
+  const startNewChat = () => {
+    loadNewSessionPage();
+    loadHistory();
+    setActivateState(prev => ({
+        ...prev,
+        title: 'New Chat'
+      }));
+    setMessages([]);
+    shouldScrollRef.current = true;
+  };
 
-              {/* Right side (Logout button) */}
-              <button 
-                  onClick={handleLogout} 
-                  className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-medium"
-              >
-                  Logout
-              </button>
-          </div>
+  // Toggle sidebar collapse state
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(!isSidebarCollapsed);
+  };
 
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50">
-              {messages.map((msg) => (
-                  <ChatMessage
-                      key={msg.id}
-                      message={msg.text}
-                      isUser={msg.sender === "user"}
-                      timestamp={msg.timestamp}
-                  />
-              ))}
-
-              {isLoading && <TypingIndicator />}
-
-              <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input */}
-          <InputContainer>
-              <form onSubmit={handleSend}>
-                  <InputWrapper>
-                      <Input
-                          type="text"
-                          value={input}
-                          onChange={(e) => setInput(e.target.value)}
-                          placeholder="Type your message here..."
-                          maxLength={500}
-                      />
-                      <SendButton type="submit" disabled={!input.trim() || isLoading}>
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                          </svg>
-                      </SendButton>
-                  </InputWrapper>
-              </form>
-          </InputContainer>
+  const TypingIndicator = () => (
+    <div className="p-4 mb-4 fade-in message-ai">
+      <div className="flex items-start">
+        <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center mr-3 flex-shrink-0">
+          <i className="fas fa-robot text-white text-sm"></i>
+        </div>
+        <div>
+          <h3 className="font-semibold text-purple-300">{activeState.title}</h3>
+          <p className="mt-1 text-gray-200 typing-indicator">
+            <span className="typing-dot"></span>
+            <span className="typing-dot"></span>
+            <span className="typing-dot"></span>
+          </p>
+        </div>
       </div>
+    </div>
   );
-};
 
-export default Chatbot;
+ 
+
+
+
+  // Handle delete message action
+  const handleDeleteMessage = (message) => {
+    setMessageToDelete(message);
+    setShowMessageDeleteModal(true);
+  };
+
+  // Confirm message deletion
+  const confirmDeleteMessage = () => {
+    setMessages(prev => prev.filter(msg => msg.id !== messageToDelete.id));
+    
+    // Send delete to server if needed
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      const deletePayload = JSON.stringify({
+        type: 'delete_message',
+        message_id: messageToDelete.id
+      });
+      socketRef.current.send(deletePayload);
+    }
+    
+    setShowMessageDeleteModal(false);
+    setMessageToDelete(null);
+  };
+
+  // Cancel message deletion
+  const cancelDeleteMessage = () => {
+    setShowMessageDeleteModal(false);
+    setMessageToDelete(null);
+  };
+
+  // Component to render a single message bubble with new styling
+  const MessageBubble = ({ message }) => {
+    const isUser = message.sender === 'user';
+    useEffect(() => {
+    if (!isUser) {
+      Prism.highlightAll(); 
+    }
+  }, [message.text, isUser]);
+
+    // Regular message
+    return (
+      <div className={`p-4 mb-4 ${isUser ? 'message-user' : 'message-ai'} ${
+        !isUser && message.isStreaming ? 'typing-animation' : ''}`}>
+        <div className={`flex items-start ${isUser ? 'flex-row-reverse' : ''}`}>
+        {/* Message content */}
+      <div className={`relative flex-grow-0 p-4 rounded-xl shadow-md ${ isUser ? 'bg-gradient-to-r from-gray-600 to-gray-700 rounded-bl-none' : 'bg-gradient-to-r from-purple-500 to-blue-500 rounded-br-none' } ${isUser ? 'text-right' : 'text-left'}`}>
+        <div className={`flex items-center ${isUser ? 'flex-row-reverse' : ''}`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
+            ${isUser? 'bg-gradient-to-r from-gray-600 to-gray-700 ml-3' : 'bg-gradient-to-r from-purple-500 to-blue-500 mr-3'}`}>
+            <i className={`fas text-sm ${isUser ? 'fa-user text-gray-300' : 'fa-robot text-white' }`}></i>
+          </div>
+
+          <span className={`font-semibold ${isUser ? 'text-blue-300' : 'text-purple-300'}`}>
+            {isUser ? 'You' : 'Ai Bot'}
+          </span>
+        </div>
+      {/* Real-time typing text */}
+        {isUser ? (
+          <p className="mt-1 text-gray-200 whitespace-pre-wrap">{message.text}</p>
+        ) : (
+          <div className={`mt-1 text-gray-200 whitespace-pre-wrap ai-response max-w-3xl`} dangerouslySetInnerHTML={{__html: FormatMessageAdvanced(message.text),}}/>
+        )}
+
+        {/* Action icons */}
+        <div className={`flex gap-3 mt-2 ${isUser ? 'justify-end' : 'justify-start' } text-gray-300 text-sm`}>
+          <button onClick={() => navigator.clipboard.writeText(message.text)} className="hover:text-white transition-colors copy-user-content tooltip">
+            <i className="fas fa-copy"></i>
+            <span className="tooltip-text">Copy</span>
+          </button>
+
+          {isUser && (
+            <>
+              <button className="hover:text-white transition-colors edit-user-content tooltip">
+                <i className="fas fa-edit"></i>
+                <span className="tooltip-text">Edit message</span>
+              </button>
+              <button  className="hover:text-white transition-colors delete-user-content tooltip">
+                <i className="fas fa-trash"></i>
+                <span className="tooltip-text">Delete message</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+  </div>
+</div>
+);
+
+  };
+
+  const loadUpdateContentTite =(newTitle)=>{
+    const truncated =
+        newTitle.length > 25 ? newTitle.substring(0, 25) + "..." : newTitle;
+
+      setActivateState(prev => ({
+        ...prev,
+        title: truncated
+      }));
+  }
+
+  const handleConversationClick = (conversationId, title) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      // Mark which conversation we're waiting for
+      loadContent(conversationId);
+    
+      loadUpdateContentTite(title)
+      appManager.updateCurrentSession(conversationId);
+    } else {
+      console.error("WebSocket is not open, cannot fetch messages.");
+    }
+  };
+
+  // Handle three-dot menu click
+  const handleMenuClick = (e, conversationId) => {
+    e.stopPropagation();
+    console.log(conversationId)
+    setActiveDropdown(activeDropdown === conversationId ? null : conversationId);
+  };
+
+  // Handle edit action
+  const handleEdit = (historyItem) => {
+    setSelectedHistory(historyItem);
+    setEditTitle(historyItem.title);
+    setShowEditModal(true);
+    setActiveDropdown(null);
+  };
+
+  // Handle delete action
+  const handleDelete = (historyItem) => {
+    setSelectedHistory(historyItem);
+    setShowDeleteModal(true);
+    setActiveDropdown(null);
+  };
+
+  // Confirm delete
+  const confirmDelete = () => {
+    const deleteContentPayload = JSON.stringify({
+      target_id:selectedHistory.id,
+      type: 'delete_content'
+    });
+    socketRef.current.send(deleteContentPayload);
+    loadNewSessionPage();
+    loadContent(selectedHistory.id);
+    setShowDeleteModal(false);
+    setSelectedHistory(null);
+  };
+
+  // Save edited title
+  const saveEdit = () => {
+    const editTitlePayload = JSON.stringify({
+        message_id:selectedHistory.id,
+        content:editTitle,
+        type: 'edit_content'
+      });
+    socketRef.current.send(editTitlePayload);
+    setShowEditModal(false);
+    setSelectedHistory(null);
+  };
+
+  // Cancel edit
+  const cancelEdit = () => {
+    setShowEditModal(false);
+    setSelectedHistory(null);
+  };
+
+  // Cancel delete
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
+    setSelectedHistory(null);
+  };
+
+  // Add styles to document head once
+  let stylesAdded = false;
+  const addMarkdownStyles = () => {
+    if (stylesAdded) return;
+
+    const styleElement = document.createElement("style");
+    styleElement.textContent = markdownStyles;
+    document.head.appendChild(styleElement);
+    stylesAdded = true;
+  };
+
+  useEffect(() => {
+    addMarkdownStyles();
+  }, [])
+
+ 
+
+  // Copy function for code blocks - attach to window for global access
+  if (typeof window !== 'undefined') {
+    window.copyCode = (button) => {
+        const code = button.nextElementSibling.innerText;
+        navigator.clipboard.writeText(code).then(() => {
+            button.innerHTML = "✅";
+            setTimeout(() => (button.innerHTML = "📋"), 1500);
+        });
+    };
+  }
+
+  return (
+    <div className="bg-gray-950 text-gray-100 h-screen flex overflow-hidden font-sans chat-body">
+    
+      {/* Delete Confirmation Modal for conversations */}
+      {showDeleteModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="text-lg font-semibold mb-4">Delete chat?</h3>
+            <p className='delete-question'>Are you sure you want to delete this chat? <br />This action cannot be undone.</p>
+            <div className="modal-buttons">
+              <button className="modal-button modal-button-secondary" onClick={cancelDelete}>
+                Cancel
+              </button>
+              <button className="modal-button modal-button-danger" onClick={confirmDelete}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal for messages */}
+      {showMessageDeleteModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="text-lg font-semibold mb-4">Delete message?</h3>
+            <p className='delete-question'>Are you sure you want to delete this message? <br />This action cannot be undone.</p>
+            <div className="modal-buttons">
+              <button className="modal-button modal-button-secondary" onClick={cancelDeleteMessage}>
+                Cancel
+              </button>
+              <button className="modal-button modal-button-danger" onClick={confirmDeleteMessage}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Title Modal */}
+      {showEditModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h3 className="text-lg font-semibold mb-4">Edit Conversation Title</h3>
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="w-full p-3 bg-gray-800 border border-gray-700 rounded-md text-white mb-4"
+              placeholder="Enter new title"
+            />
+            <div className="modal-buttons">
+              <button className="modal-button modal-button-secondary" onClick={cancelEdit}>
+                Cancel
+              </button>
+              <button className="modal-button modal-button-primary" onClick={saveEdit}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal */}
+      {showLogoutModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h2 className="modal-title">Confirm Logout</h2>
+            <p className="modal-text">Are you sure you want to log out?</p>
+            <div className="modal-actions">
+              <button onClick={handleLogout} className="btn-confirm">Yes, Logout</button>
+              <button onClick={() => setShowLogoutModal(false)} className="btn-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Sidebar for history and controls */}
+      <aside className={`${isSidebarCollapsed ? 'sidebar-collapsed' : ''} w-64 bg-gray-900 border-r border-gray-800 flex flex-col shadow-lg relative`}>
+        <div className="sidebar-content p-4 flex-grow flex flex-col">
+          {/* New chat button */}
+          <button
+            onClick={startNewChat}
+            className="flex items-center justify-center w-full px-4 py-3 bg-gray-800 hover:bg-gray-700 transition-colors duration-200 rounded-lg font-medium mb-4 text-white"
+          >
+            <i className="fas fa-plus mr-2"></i> New Chat
+          </button>
+          {/* Chat history */}
+          <ul className="flex-grow overflow-y-auto scrollbar-hide text-sm space-y-2 pr-2 history-container">
+             {history.map((item) => (
+          <li
+            key={item.id}
+            className={`history-item ${activeDropdown === item.id ? 'dropdown-active' : ''}`}
+            onClick={() => handleConversationClick(item.id, item.title)}>
+            <span className="conversation-title">{item.title}</span>
+            
+            <div 
+              className="history-menu"
+              onClick={(e) => handleMenuClick(e, item.id)}>
+              <i className="fas fa-ellipsis-v"></i>
+            </div>
+            
+            {activeDropdown === item.id && (
+              <div ref={dropdownRef} className="dropdown-menu">
+                <div 
+                  className="dropdown-item"
+                  onClick={(e) => { e.stopPropagation(); handleEdit(item); }}
+                >
+                  <i className="fas fa-edit"></i> Edit
+                </div>
+                <div 
+                  className="dropdown-item delete-option"
+                  onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+                >
+                  <i className="fas fa-trash-alt"></i> Delete
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+          </ul>
+        </div>
+        {/* Settings and Logout buttons */}
+        <div className="sidebar-content border-t border-gray-800 p-4 space-y-2">
+          <button className="flex items-center w-full px-4 py-2 text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors duration-200 rounded-lg">
+            <i className="fas fa-cog mr-2"></i> Settings
+          </button>
+          <button onClick={() => setShowLogoutModal(true)} className="flex items-center w-full px-4 py-2 text-gray-400 hover:text-gray-100 hover:bg-gray-800 transition-colors duration-200 rounded-lg">
+            <i className="fas fa-sign-out-alt mr-2"></i> Logout
+          </button>
+        
+        </div>
+        
+        {/* Collapse/Expand button */}
+        <div className="sidebar-collapse-button" onClick={toggleSidebar}>
+          <i className={`fas ${isSidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'} text-gray-300 text-xs`}></i>
+        </div>
+      </aside>
+
+      {/* Main chat area */}
+      <main className="flex-1 flex flex-col chat-container">
+  {/* Header fixed */}
+ 
+      <header className="p-4 bg-gray-900 border-b border-gray-800 flex items-center justify-between shadow-md">
+        <h1 className="text-xl font-bold text-gray-100">{activeState.title}</h1>
+        <div className="flex items-center">
+          <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+          <span className="text-sm text-gray-400">Online</span>
+        </div>
+      </header>
+  {/* Scrollable messages */}
+  <div ref={chatDisplayRef} className="message-container p-6">
+    {messages.map((msg) => (
+      <MessageBubble key={msg.id} message={msg} />
+    ))}
+    {isAiTyping && isLoading && <TypingIndicator />}
+    <div ref={messagesEndRef} />
+  </div>
+
+  {/* Fixed textarea input */}
+  <form onSubmit={handleSend} className="p-4 border-t border-gray-800">
+    <div className="relative flex items-center bg-gray-900 border border-gray-700 rounded-xl shadow-md">
+      <textarea
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        rows="1"
+        placeholder="Send a message..."
+        className="w-full pl-5 pr-14 py-4 text-sm bg-transparent rounded-xl focus:outline-none resize-none"
+        onInput={(e) => {
+          e.target.style.height = "auto";
+          e.target.style.height = `${e.target.scrollHeight}px`;
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            handleSend(e);
+          }
+        }}
+      ></textarea>
+      <button
+        type="submit"
+        className="absolute right-3 bottom-3 p-2 bg-blue-600 text-white rounded-full h-8 w-8 flex items-center justify-center transition-colors duration-200 hover:bg-blue-700"
+      >
+        <i className="fas fa-arrow-up"></i>
+      </button>
+    </div>
+  </form>
+</main>
+
+    </div>
+  );
+}

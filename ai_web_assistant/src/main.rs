@@ -15,6 +15,8 @@ mod middleware;
 mod ws;
 mod payloads;
 mod swagger_doc;
+mod helpers;
+
 
 use config::settings::Settings;
 use connection::db::establish_connection;

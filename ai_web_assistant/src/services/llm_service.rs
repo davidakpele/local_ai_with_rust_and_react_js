@@ -14,7 +14,6 @@ use futures_util::{StreamExt, TryStreamExt};
 use crate::config::config_llm::Config;
 use crate::payloads::communication_response::CommunicationResponse;
 use crate::ws::ws_channel::WsBroadcaster;
-
 #[derive(Serialize, Deserialize, Debug)]
 struct OllamaResponse {
     response: Option<String>,
@@ -40,7 +39,7 @@ impl LlmService {
         prompt: &str,
         broadcaster: Arc<WsBroadcaster>,
         client_id: Uuid,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<String, Box<dyn Error + Send + Sync>> { 
         let url = format!("{}/api/generate", self.config.ollama_url);
 
         let request_body = json!({
@@ -82,6 +81,8 @@ impl LlmService {
         let reader = TokioBufReader::new(stream_reader);
         let mut lines = reader.lines();
 
+        let mut full_response = String::new(); 
+
         while let Some(line_result) = lines.next_line().await? {
             let trimmed = line_result.trim();
             if trimmed.is_empty() {
@@ -97,6 +98,10 @@ impl LlmService {
             };
 
             if let Some(text) = ollama_response.response {
+                // Accumulate the response
+                full_response.push_str(&text);
+                
+                // Also stream to WebSocket
                 let _ = broadcaster.send_to(
                     &client_id,
                     serde_json::to_string(&CommunicationResponse::StreamChunk {
@@ -117,7 +122,7 @@ impl LlmService {
             }).unwrap()
         ).await;
 
-        Ok(())
+        Ok(full_response) // Return the accumulated response
     }
 
     pub async fn health_check(&self) -> Result<bool, Box<dyn Error + Send + Sync>> {

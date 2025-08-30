@@ -8,7 +8,7 @@ const Logout = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    localStorage.removeItem('ollama_data');
+    appManager.clearAll();
     navigate('/auth/login');
   }, [navigate]);
   appManager.clear({ keys: ['token'], type: 'local' });
