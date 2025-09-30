@@ -168,3 +168,6 @@ JWT_SECRET=your_secure_secret
 ```
 ### 📜 License
 > Distributed under the MIT License.
+
+
+## ollama run finalend/hermes-3-llama-3.1:8b
